@@ -1,8 +1,13 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { normalizeContent } from './normalizeContent.js';
+import { resolveStyle } from './templates.js';
 
 export type GeneratePdfInput = {
   title: string;
   content: string;
+  contentFormat?: 'plain' | 'markdown' | 'html';
+  templateId?: string | null;
+  settings?: Record<string, unknown>;
 };
 
 export type GeneratePdfResult = {
@@ -10,11 +15,10 @@ export type GeneratePdfResult = {
   pageCount: number;
 };
 
-const PAGE = {
-  width: 612, // Letter
-  height: 792,
-  margin: 54,
-};
+const PAGE_SIZES = {
+  letter: { width: 612, height: 792 },
+  a4: { width: 595.28, height: 841.89 },
+} as const;
 
 function wrapText(text: string, maxWidth: number, measure: (t: string) => number): string[] {
   const lines: string[] = [];
@@ -57,49 +61,54 @@ function wrapText(text: string, maxWidth: number, measure: (t: string) => number
   return lines;
 }
 
-export async function generatePdf({ title, content }: GeneratePdfInput): Promise<GeneratePdfResult> {
+export async function generatePdf(input: GeneratePdfInput): Promise<GeneratePdfResult> {
   const pdf = await PDFDocument.create();
 
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const titleFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  const fontSize = 12;
-  const titleSize = 18;
-  const lineHeight = 16;
+  const style = resolveStyle({
+    templateId: input.templateId ?? null,
+    settings: input.settings ?? {},
+  });
+  const pageSize = PAGE_SIZES[style.pageSize];
+  const usableWidth = pageSize.width - style.margin * 2;
 
-  const usableWidth = PAGE.width - PAGE.margin * 2;
-
-  const measure = (t: string) => font.widthOfTextAtSize(t, fontSize);
-  const wrapped = wrapText(content, usableWidth, measure);
+  const normalized = normalizeContent({
+    content: input.content,
+    contentFormat: input.contentFormat ?? 'plain',
+  });
+  const measure = (t: string) => font.widthOfTextAtSize(t, style.fontSize);
+  const wrapped = wrapText(normalized, usableWidth, measure);
 
   // First page includes title
-  let page = pdf.addPage([PAGE.width, PAGE.height]);
-  let y = PAGE.height - PAGE.margin;
+  let page = pdf.addPage([pageSize.width, pageSize.height]);
+  let y = pageSize.height - style.margin;
 
-  page.drawText(title, {
-    x: PAGE.margin,
-    y: y - titleSize,
-    size: titleSize,
+  page.drawText(input.title, {
+    x: style.margin,
+    y: y - style.titleSize,
+    size: style.titleSize,
     font: titleFont,
     color: rgb(0.1, 0.1, 0.1),
   });
-  y -= titleSize + 18;
+  y -= style.titleSize + 18;
 
   for (const line of wrapped) {
-    if (y - lineHeight < PAGE.margin) {
-      page = pdf.addPage([PAGE.width, PAGE.height]);
-      y = PAGE.height - PAGE.margin;
+    if (y - style.lineHeight < style.margin) {
+      page = pdf.addPage([pageSize.width, pageSize.height]);
+      y = pageSize.height - style.margin;
     }
 
     page.drawText(line, {
-      x: PAGE.margin,
-      y: y - fontSize,
-      size: fontSize,
+      x: style.margin,
+      y: y - style.fontSize,
+      size: style.fontSize,
       font,
       color: rgb(0, 0, 0),
     });
 
-    y -= lineHeight;
+    y -= style.lineHeight;
   }
 
   const pdfBytes = await pdf.save();

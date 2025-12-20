@@ -5,9 +5,18 @@ describe('documents + pdf download', () => {
   it('creates a document and downloads a PDF', async () => {
     const app = await buildApp({ logger: false });
 
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      payload: { email: 'a@example.com', password: 'password123', name: 'A' },
+    });
+    expect(reg.statusCode).toBe(201);
+    const { accessToken } = reg.json() as { accessToken: string };
+
     const created = await app.inject({
       method: 'POST',
       url: '/v1/documents',
+      headers: { authorization: `Bearer ${accessToken}` },
       payload: { title: 'Hello', content: 'This is a test document.' },
     });
 
@@ -18,6 +27,7 @@ describe('documents + pdf download', () => {
     const download = await app.inject({
       method: 'GET',
       url: `/v1/documents/${meta.id}/download`,
+      headers: { authorization: `Bearer ${accessToken}` },
     });
 
     expect(download.statusCode).toBe(200);
