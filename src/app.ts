@@ -1,4 +1,4 @@
-import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyServerOptions } from 'fastify';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import cors from '@fastify/cors';
@@ -9,14 +9,18 @@ import { healthRoutes } from './routes/health.js';
 import { documentsRoutes } from './routes/documents.js';
 
 export type BuildAppOptions = {
-  logger: boolean | FastifyBaseLogger;
+  logger?: FastifyServerOptions['logger'];
 };
 
-export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
-  const app = Fastify({
-    logger: options.logger,
+export async function buildApp(options: BuildAppOptions) {
+  const fastifyOptions: FastifyServerOptions = {
     genReqId: () => crypto.randomUUID(),
-  });
+  };
+  if (options.logger !== undefined) {
+    fastifyOptions.logger = options.logger;
+  }
+
+  const app = Fastify(fastifyOptions);
 
   // Baseline hardening
   await app.register(helmet);
@@ -61,7 +65,12 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
     void reply.status(statusCode).send({
       code,
-      message: statusCode === 500 ? 'Internal server error' : err.message,
+      message:
+        statusCode === 500
+          ? 'Internal server error'
+          : err instanceof Error
+            ? err.message
+            : 'Request failed',
       requestId: req.id,
     });
   });
